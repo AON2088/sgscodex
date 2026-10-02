@@ -2,7 +2,7 @@
 // @name         三国杀自走棋快捷助手
 // @namespace    http://tampermonkey.net/
 // @version      2.0.0
-// @description  S11昭君出塞更新 [1-6]购买  [R]刷新  [F]锁定  [Shift+1]遣散手牌中最右侧卡牌  [Shift+2]使用最右侧锦囊(自动跳过黑名单)  [Shift+3]自动随征  [Shift+4]一键遣散指定吴国低星卡牌  [Alt+1]自动刷新+购买祢衡(开关)  [Alt+2]自动刷新+购买庞德公(开关)  [Alt+3]锦囊自动使用配置面板  [Alt+9]遣散上阵区域最右侧卡牌  [Alt+0]上阵手牌中最右侧卡牌 [Space]跳过战斗 [Tab]禁用/启用三连控制 [Shift+R]强制刷新UI | 2x速度 | 事件+轮询刷新
+// @description  S11昭君出塞更新 [1-6]购买  [R]刷新  [F]锁定  [Shift+1]遣散手牌中最右侧卡牌  [Shift+2]使用最右侧锦囊(自动跳过黑名单)  [Shift+3]自动随征  [Shift+4]一键遣散指定吴国低星卡牌  [Alt+1]打开自动寻牌面板（如兵贵神速时使用）  [Alt+3]锦囊自动使用黑名单管理面板 [Alt+9]遣散上阵区域最右侧卡牌  [Alt+0]上阵手牌中最右侧卡牌 [Space]跳过战斗 [Tab]禁用/启用三连控制 [Shift+R]强制刷新UI | 2x速度 | 事件+轮询刷新
 // @author       鲁班大王
 // @email		 caoyang@stu.sufe.edu.cn
 // @match        https://game.4399iw2.com/yxxsgs/*
