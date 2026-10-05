@@ -22,12 +22,6 @@
     // ── 全局开关 ──
     window.blockTripleCombine = true;
 
-    // ── 速度 ──
-    if (typeof TavernChessGameContext !== "undefined" && TavernChessGameContext.Speed !== undefined) {
-        TavernChessGameContext.Speed = 2;
-        console.info("[Speed] 2x");
-    }
-
     // ── 随征卡ID列表 ──
     var FOLLOWUP_CHESS_IDS = [
         '21103071', '21103072', // 黄盖
