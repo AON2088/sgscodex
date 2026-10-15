@@ -518,3 +518,28 @@ setHandChess([
 
 // 5. 刷新UI
 refreshHandUI2()
+
+
+
+setShopGoods([
+    {"goodsID": 971, "chessID": 21007021, "hp": 2, "attack": 2, "source": 1, "totalHp": 2, "totalAttack": 2, "skills": [{"skillID": 870211}], "minionTypes": [ "CHESSMTYuanShi"]},
+    {"goodsID": 971, "chessID": 21007021, "hp": 2, "attack": 2, "source": 1, "totalHp": 2, "totalAttack": 2, "skills": [{"skillID": 870211}], "minionTypes": [ "CHESSMTYuanShi"]},
+    {"goodsID": 971, "chessID": 21007021, "hp": 2, "attack": 2, "source": 1, "totalHp": 2, "totalAttack": 2, "skills": [{"skillID": 870211}], "minionTypes": [ "CHESSMTYuanShi"]},
+    {"goodsID": 971, "chessID": 21007021, "hp": 2, "attack": 2, "source": 1, "totalHp": 2, "totalAttack": 2, "skills": [{"skillID": 870211}], "minionTypes": [ "CHESSMTYuanShi"]},
+    {"goodsID": 971, "chessID": 21007021, "hp": 2, "attack": 2, "source": 1, "totalHp": 2, "totalAttack": 2, "skills": [{"skillID": 870211}], "minionTypes": [ "CHESSMTYuanShi"]},
+    {"goodsID": 971, "chessID": 21007021, "hp": 2, "attack": 2, "source": 1, "totalHp": 2, "totalAttack": 2, "skills": [{"skillID": 870211}], "minionTypes": [ "CHESSMTYuanShi"]},
+])
+
+
+setHandChess([
+    { goodsID: 1009, chessID: 21001031, name: '邓艾',        "hp": 10,
+        "attack": 50,
+        "source": 1,
+        "totalHp": 40,
+        "totalAttack": 50}
+])
+
+setHandChess([
+    { goodsID: 1003, spellID: 2024210036, name: '洞烛先机' }
+])
+
