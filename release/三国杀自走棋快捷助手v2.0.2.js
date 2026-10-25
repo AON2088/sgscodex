@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         三国杀自走棋快捷助手
 // @namespace    http://tampermonkey.net/
-// @version      2.0.1
+// @version      2.0.2
 // @description  S11昭君出塞更新 [1-6]购买  [R]刷新  [F]锁定  [Shift+1]遣散手牌中最右侧卡牌  [Shift+2]使用最右侧锦囊(自动跳过黑名单)  [Shift+3]自动随征  [Shift+4]一键遣散指定吴国低星卡牌  [Alt+1]打开自动寻牌面板（如兵贵神速时使用）  [Alt+3]锦囊自动使用黑名单管理面板 [Alt+9]遣散上阵区域最右侧卡牌  [Alt+0]上阵手牌中最右侧卡牌 [Space]跳过战斗 [Tab]禁用/启用三连控制 [Shift+R]强制刷新UI | 2x速度 | 事件+轮询刷新
 // @author       鲁班大王
 // @email		 caoyang@stu.sufe.edu.cn
@@ -1074,85 +1074,319 @@
 
     // ── Alt+8 自动上阵最右侧棋子并指定第0个目标 ──
 	// 全局变量：暂存待上阵的阵容
-	var pendingLineup = null;
 
-	function deployRightmostCardWithTarget() {
-		const mgr = getManager();
-		if (!mgr) { showToast("管理器未就绪"); return false; }
-		if (mgr.phase !== 6) { showToast("非招募阶段"); return false; }
-		if (!mgr.CanOperate) { showToast("不可操作"); return false; }
 
-		const hand = mgr.HandChess;
-		if (!hand || hand.length === 0) { showToast("手牌为空"); return false; }
 
-		const TARGET_IDS = new Set([21108081, 21108082, 21103051, 21103052]);
-		let targetCard = null;
-		for (let i = hand.length - 1; i >= 0; i--) {
-			const c = hand[i];
-			if (c && TARGET_IDS.has(c.chessID)) { targetCard = c; break; }
-		}
-		if (!targetCard) { showToast("手牌中无陈珪/丁奉"); return false; }
+    // ============================================================
+    // 【核心】Alt+8 两段式自动上阵 + 技能目标指定
+    // ============================================================
+    // 全局变量：暂存待上阵的阵容（ReqChessLineUp 劫持用）
+    var pendingLineup = null;
 
-		const handGoodsID = targetCard.goodsID;
-		const skillID = targetCard.skills && targetCard.skills[0] ? targetCard.skills[0].skillID : 0;
-		if (!skillID) { showToast("技能ID异常"); return false; }
+    // 卡牌 A：陈珪
+    var CHENGUI_CHESS_IDS = [21108081];  // 仅普通；如需金卡可加 21108082
+    // 卡牌 B 的判定：丁奉
+    var DINGFENG_CHESS_IDS = [21103051, 21103052];
+    // 卡牌 C 的候选：凌统 / 孙尚香（普通 + 金色）
+    var CANDIDATE_C_CHESS_IDS = [21103061, 21103062, 21103171, 21103172];
 
-		const battle = mgr.BattleChess;
-		if (!battle || battle.length === 0) { showToast("场上无目标"); return false; }
-		const target = battle[0];
-		if (!target || !target.goodsID) { showToast("场上无目标"); return false; }
-		const targetGoodsID = target.goodsID;
+    // 从 hand 中从右往左找第一个 chessID 在 ids 里的卡牌
+    function findRightmostHandByChessIds(hand, ids) {
+        if (!hand) return null;
+        var idSet = new Set(ids);
+        for (var i = hand.length - 1; i >= 0; i--) {
+            var c = hand[i];
+            if (c && idSet.has(c.chessID)) return { card: c, index: i };
+        }
+        return null;
+    }
 
-		// 构建 lineup
-		let lineup = mgr.SelfInfo.LineUpGoodsIDs.slice();
-		while (lineup.length < 7) lineup.push(0);
-		const emptyIndex = lineup.indexOf(0);
-		if (emptyIndex === -1) { showToast("战斗区已满"); return false; }
-		lineup[emptyIndex] = handGoodsID;
+    // 从 hand 中按 goodsID 找卡牌
+    function findHandByGoodsID(hand, goodsID) {
+        if (!hand || !goodsID) return null;
+        for (var i = 0; i < hand.length; i++) {
+            var c = hand[i];
+            if (c && (c.goodsID === goodsID || c.GoodsID === goodsID)) {
+                return { card: c, index: i };
+            }
+        }
+        return null;
+    }
 
-		// ==== 关键：劫持 ReqChessLineUp ====
-		// 服务端返回 CMSG_CRESPCHESSCHOOSESKILLTARGET 后，
-		// onRespChessChooseSkillTarget 会调 ReqChessLineUp(null, true)，
-		// 我们把它替换成 lineup。
-		pendingLineup = lineup;
-		const origReqChessLineUp = mgr.ReqChessLineUp;
+    // 从 lineup 中从右往左找第一个 chessID 在 ids 里的卡牌
+    // lineup 可以是 BattleChess（对象数组）或 LineUpGoodsIDs（goodsID 数组）
+    function findRightmostBattleByChessIds(battle, ids) {
+        if (!battle) return null;
+        var idSet = new Set(ids);
+        for (var i = battle.length - 1; i >= 0; i--) {
+            var c = battle[i];
+            if (c && idSet.has(c.chessID)) return { card: c, index: i };
+        }
+        return null;
+    }
 
-		mgr.ReqChessLineUp = function (e, t, i) {
-			// 来自 onRespChessChooseSkillTarget 的调用：e 是 null 或 undefined，t 是 true
-			if ((e === null || e === undefined) && t === true && pendingLineup) {
-				const l = pendingLineup;
-				pendingLineup = null;
-				// 恢复原方法
-				mgr.ReqChessLineUp = origReqChessLineUp;
-				return origReqChessLineUp.call(mgr, l, t, i);
-			}
-			return origReqChessLineUp.call(mgr, e, t, i);
-		};
+    // 构建把某张手牌放到 lineup 末尾空位的新 lineup 数组
+    function buildLineupWithCard(mgr, handGoodsID) {
+        var lineup = mgr.SelfInfo.LineUpGoodsIDs.slice();
+        while (lineup.length < 7) lineup.push(0);
+        var emptyIndex = lineup.indexOf(0);
+        if (emptyIndex === -1) return null;
+        lineup[emptyIndex] = handGoodsID;
+        return lineup;
+    }
 
-		// ==== 发技能目标协议 ====
-		try {
-			mgr.ReqChessChooseSkillTarget([targetGoodsID], skillID, handGoodsID);
-		} catch (e) {
-			console.error("[Alt+8] ReqChessChooseSkillTarget 异常:", e);
-			// 清理劫持
-			pendingLineup = null;
-			mgr.ReqChessLineUp = origReqChessLineUp;
-			showToast("发送协议失败");
-			return false;
-		}
+    // 从卡牌的 skills 里取第一个技能 ID
+    function getCardSkillID(card) {
+        if (!card) return 0;
+        if (card.skills && card.skills[0] && card.skills[0].skillID) {
+            return card.skills[0].skillID;
+        }
+        return 0;
+    }
 
-		// ==== 兜底：如果服务端 3 秒内没返回，清理劫持 ====
-		setTimeout(function () {
-			if (pendingLineup) {
-				console.warn("[Alt+8] 服务端超时未响应，恢复 ReqChessLineUp");
-				pendingLineup = null;
-				mgr.ReqChessLineUp = origReqChessLineUp;
-			}
-		}, 3000);
+    // ── 上阵一张手牌（可选指定技能目标） ──
+    // 参数：
+    //   handGoodsID        要上阵的手牌 goodsID
+    //   skillID            若 > 0，走"技能目标选择"流程；否则直接上阵
+    //   skillTargetGoodsID 技能目标 goodsID（仅 skillID > 0 时有效）
+    //   onDone             完成后回调 (success: boolean)
+    function lineUpCard(mgr, handGoodsID, skillID, skillTargetGoodsID, onDone) {
+        var lineup = buildLineupWithCard(mgr, handGoodsID);
+        if (!lineup) {
+            showToast("战斗区已满");
+            onDone && onDone(false);
+            return;
+        }
 
-		showToast("自动上阵并指定目标");
-		return true;
-	}
+        // 无技能目标：直接走 ReqChessLineUp
+        if (!skillID || !skillTargetGoodsID) {
+            try {
+                mgr.ReqChessLineUp(lineup);
+                onDone && onDone(true);
+            } catch (e) {
+                console.error("[lineUpCard] ReqChessLineUp 异常:", e);
+                onDone && onDone(false);
+            }
+            return;
+        }
+
+        // 有技能目标：劫持 ReqChessLineUp
+        pendingLineup = lineup;
+        var origReqChessLineUp = mgr.ReqChessLineUp;
+
+        mgr.ReqChessLineUp = function (e, t, i) {
+            if ((e === null || e === undefined) && t === true && pendingLineup) {
+                var l = pendingLineup;
+                pendingLineup = null;
+                mgr.ReqChessLineUp = origReqChessLineUp;
+                try {
+                    return origReqChessLineUp.call(mgr, l, t, i);
+                } finally {
+                    onDone && onDone(true);
+                }
+            }
+            return origReqChessLineUp.call(mgr, e, t, i);
+        };
+
+        try {
+            mgr.ReqChessChooseSkillTarget([skillTargetGoodsID], skillID, handGoodsID);
+        } catch (e) {
+            console.error("[lineUpCard] ReqChessChooseSkillTarget 异常:", e);
+            pendingLineup = null;
+            mgr.ReqChessLineUp = origReqChessLineUp;
+            onDone && onDone(false);
+            return;
+        }
+
+        // 超时兜底
+        setTimeout(function () {
+            if (pendingLineup) {
+                console.warn("[lineUpCard] 服务端超时未响应，恢复 ReqChessLineUp");
+                pendingLineup = null;
+                mgr.ReqChessLineUp = origReqChessLineUp;
+                onDone && onDone(false);
+            }
+        }, 3000);
+    }
+
+    // ── Alt+8 主流程 ──
+    function deployRightmostCardWithTarget() {
+        var mgr = getManager();
+        if (!mgr) { showToast("管理器未就绪"); return false; }
+        if (mgr.phase !== 6) { showToast("非招募阶段"); return false; }
+        if (!mgr.CanOperate) { showToast("不可操作"); return false; }
+
+        // ── 步骤 0：找 A（陈珪） ──
+        var hand = mgr.HandChess;
+        if (!hand || hand.length === 0) { showToast("手牌为空"); return false; }
+
+        var aFound = findRightmostHandByChessIds(hand, CHENGUI_CHESS_IDS);
+        if (!aFound) { showToast("手牌中无陈珪"); return false; }
+
+        var cardA = aFound.card;
+        var handGoodsA = cardA.goodsID || cardA.GoodsID;
+        if (!handGoodsA) { showToast("陈珪 goodsID 异常"); return false; }
+
+        // ── 步骤 0：找 B（上阵前 lineup 最右侧） ──
+        var battle = mgr.BattleChess;
+        if (!battle || battle.length === 0) { showToast("上阵区为空"); return false; }
+
+        var cardB = null;
+        for (var bi = battle.length - 1; bi >= 0; bi--) {
+            if (battle[bi] && battle[bi].goodsID) { cardB = battle[bi]; break; }
+        }
+        if (!cardB) { showToast("上阵区无有效棋子"); return false; }
+
+        var bGoodsID = cardB.goodsID || cardB.GoodsID;
+        var bChessID = cardB.chessID || cardB.ChessID;
+        if (!bGoodsID) { showToast("B goodsID 异常"); return false; }
+
+        // ── 步骤 1：上阵 A，目标为 B ──
+        var skillA = getCardSkillID(cardA);
+        if (!skillA) { showToast("陈珪 技能ID异常"); return false; }
+
+        console.info("[Alt+8] 上阵陈珪(goodsID=" + handGoodsA + ")，目标B(goodsID=" + bGoodsID + ", chessID=" + bChessID + ")");
+
+        lineUpCard(mgr, handGoodsA, skillA, bGoodsID, function (ok) {
+            if (!ok) {
+                showToast("陈珪上阵失败");
+                return;
+            }
+
+            // 稍等，让服务端状态和客户端同步
+            setTimeout(function () {
+                afterStepA(mgr, bGoodsID, bChessID);
+            }, 150);
+        });
+
+        showToast("Alt+8: 上阵陈珪并指定目标...");
+        return true;
+    }
+
+    // ── 步骤 1 之后：根据 B 的 chessId 分流 ──
+    function afterStepA(mgr, bGoodsID, bChessID) {
+        var isB_DingFeng = DINGFENG_CHESS_IDS.indexOf(bChessID) !== -1;
+
+        // 在 hand 中找 B
+        var handB = findHandByGoodsID(mgr.HandChess, bGoodsID);
+        if (!handB) {
+            showToast("未找到卡牌B，流程结束");
+            console.info("[Alt+8] 未在 hand 中找到 B(goodsID=" + bGoodsID + ")");
+            return;
+        }
+
+        var cardB = handB.card;
+
+        if (!isB_DingFeng) {
+            // ── 情况 1：B 不是丁奉 ──
+            // 上阵 B（无技能目标），然后遣散 A
+            console.info("[Alt+8] B 不是丁奉，上阵 B(goodsID=" + bGoodsID + ")，然后遣散 A");
+
+            lineUpCard(mgr, bGoodsID, 0, 0, function (ok) {
+                if (!ok) {
+                    showToast("B 上阵失败");
+                    return;
+                }
+                setTimeout(function () {
+                    discardA(mgr);
+                }, 150);
+            });
+            showToast("Alt+8: 上阵 B...");
+        } else {
+            // ── 情况 2：B 是丁奉 ──
+            // 找 C（lineup 中最右的凌统/孙尚香；若不存在则 C = B）
+            var cBattle = mgr.BattleChess;
+            var cFound = findRightmostBattleByChessIds(cBattle, CANDIDATE_C_CHESS_IDS);
+
+            var cGoodsID = null;
+            var cChessID = null;
+
+            if (cFound) {
+                cGoodsID = cFound.card.goodsID || cFound.card.GoodsID;
+                cChessID = cFound.card.chessID || cFound.card.ChessID;
+                console.info("[Alt+8] 找到 C: chessID=" + cChessID + ", goodsID=" + cGoodsID);
+            } else {
+                cGoodsID = bGoodsID;
+                cChessID = bChessID;
+                console.info("[Alt+8] 未找到凌统/孙尚香，C = B");
+            }
+
+            var skillB = getCardSkillID(cardB);
+            if (!skillB) {
+                showToast("丁奉 技能ID异常，跳过上阵");
+                console.warn("[Alt+8] 丁奉技能ID异常，B 留在手牌");
+                return;
+            }
+
+            console.info("[Alt+8] 上阵 B(丁奉, goodsID=" + bGoodsID + ")，目标 C(goodsID=" + cGoodsID + ")");
+
+            lineUpCard(mgr, bGoodsID, skillB, cGoodsID, function (ok) {
+                if (!ok) {
+                    showToast("丁奉上阵失败");
+                    return;
+                }
+                setTimeout(function () {
+                    discardA(mgr);
+                }, 150);
+            });
+            showToast("Alt+8: 上阵丁奉并指定目标...");
+        }
+    }
+
+    // ── 遣散 A（从上阵区） ──
+    function discardA(mgr) {
+        // 在 BattleChess 中找陈珪
+        var battle = mgr.BattleChess;
+        if (!battle) return;
+        var aGoodsID = null;
+        var aChessID = null;
+        for (var i = battle.length - 1; i >= 0; i--) {
+            var c = battle[i];
+            if (c && CHENGUI_CHESS_IDS.indexOf(c.chessID) !== -1) {
+                aGoodsID = c.goodsID || c.GoodsID;
+                aChessID = c.chessID || c.ChessID;
+                break;
+            }
+        }
+        if (!aGoodsID) {
+            console.info("[Alt+8] 上阵区未找到陈珪，无需遣散");
+            return;
+        }
+        if (typeof mgr.ReqShopRecycleChess !== "function") {
+            console.warn("[Alt+8] ReqShopRecycleChess 不存在");
+            return;
+        }
+        try {
+            mgr.ReqShopRecycleChess(aGoodsID);
+            console.info("[Alt+8] 已遣散陈珪(chessID=" + aChessID + ", goodsID=" + aGoodsID + ")");
+            setTimeout(function () {
+                refreshBattleView("manual");
+            }, 100);
+        } catch (e) {
+            console.error("[Alt+8] 遣散陈珪异常:", e);
+        }
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 	
     // ── 使用最右侧锦囊（Shift+2，跳过黑名单） ──
     function useRightmostSpell() {
