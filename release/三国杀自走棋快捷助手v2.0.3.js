@@ -59,7 +59,7 @@
         311080: "增兵减灶·四",
 		311052: "随机应变·六",
 		311081: "鸩毒·六",
-		303291: "美人计·五",
+		311034: "美人计·五",
     };
     var SPELL_BLACKLIST = new Set(Object.keys(SPELL_BLACKLIST_DEFAULT).map(Number)); // 运行时黑名单 (Set, 用于快速查找)
 
